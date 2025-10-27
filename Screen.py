@@ -62,25 +62,83 @@ def sanitize_filename(name: str) -> str:
 
 # ===== 드라이버 =====
 def build_driver() -> webdriver.Chrome:
+    """Create a Chrome driver that works on Windows/macOS/Linux & Streamlit Cloud.
+    - Detect chrome binary path if provided via env or common locations.
+    - Add flags required for containerized/headless environments.
+    - Prefer system chromedriver if present; otherwise let Selenium Manager fetch one.
+    """
+    # Resolve chrome binary
+    candidate_bins = [
+        os.environ.get("GOOGLE_CHROME_BIN"),
+        os.environ.get("CHROME_BIN"),
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "C:/Program Files/Google/Chrome/Application/chrome.exe",
+        "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+    ]
+    chrome_bin = next((p for p in candidate_bins if p and os.path.exists(p)), None)
+
     opts = Options()
+    if chrome_bin:
+        opts.binary_location = chrome_bin
+
+    # User agent & locale
     opts.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
     )
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_argument("--lang=ko-KR")
+
+    # Headless/Container hardening
     if HEADLESS:
-        # Streamlit 서버 환경 고려: new headless
         opts.add_argument("--headless=new")
     opts.add_argument("--window-size=1920,1080")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-software-rasterizer")
+    opts.add_argument("--disable-extensions")
+    opts.add_argument("--disable-features=VizDisplayCompositor")
+
+    # Reduce logs
     opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
     opts.add_experimental_option('useAutomationExtension', False)
     opts.add_argument("--disable-logging")
     opts.add_argument("--log-level=3")
 
-    # chromedriver 경로를 명시해야 하는 환경이라면 Service(executable_path=...) 지정
-    service = Service(log_path=os.devnull)
-    driver = webdriver.Chrome(service=service, options=opts)
+    # Prefer system chromedriver if available
+    candidate_drivers = [
+        os.environ.get("CHROMEDRIVER"),
+        "/usr/bin/chromedriver",
+        "/usr/local/bin/chromedriver",
+    ]
+    driver_path = next((p for p in candidate_drivers if p and os.path.exists(p)), None)
+
+    if driver_path:
+        service = Service(executable_path=driver_path, log_path=os.devnull)
+    else:
+        # Fall back to Selenium Manager (will download to cache)
+        service = Service(log_path=os.devnull)
+
+    try:
+        driver = webdriver.Chrome(service=service, options=opts)
+    except Exception as e:
+        # Give clearer diagnostics for common container issues
+        raise RuntimeError(
+            "Chrome/Chromedriver 실행 실패. 다음을 확인하세요:
+"
+            "- 서버에 Chrome/Chromium가 설치되어 있는지 (또는 GOOGLE_CHROME_BIN 환경변수 설정)
+"
+            "- --no-sandbox / --disable-dev-shm-usage 플래그 적용 여부
+"
+            "- 시스템 chromedriver와 chrome 버전 호환 여부
+"
+            f"원본 오류: {e}"
+        )
+
     driver.set_page_load_timeout(60)
     return driver
 
@@ -331,7 +389,7 @@ with st.sidebar:
 
     st.caption("스크린샷/디버그 저장 위치는 현재 작업 폴더의 'screenshots', 'debug'입니다.")
 
-    up = st.file_uploader("입력 엑셀 업로드 (원본: 20251010고객사id,pw2.xlsx)", type=["xlsx"])
+    up = st.file_uploader("입력 엑셀 업로드 (원본: 20251010고객사id,pw2.xlsx)", type=["xlsx"]) 
     excel_path: Optional[Path] = None
     if up is not None:
         # 업로드 파일을 임시 경로에 저장
