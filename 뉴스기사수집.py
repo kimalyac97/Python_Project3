@@ -8,9 +8,6 @@
   * 전력시장 +에너지                          → 시트명: 전력시장 동향 (A=제목, B=기사내용, C=링크)  ※검색어 컬럼 없음
   * N 최대 1~10(유니크)
 """
-!pip install bs4
-!pip install pandas
-!pip install requests
 
 import os, re, io, time, random, logging, sys
 from datetime import datetime
@@ -325,5 +322,6 @@ if run_btn:
         file_name=out_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
 
 
